@@ -1,0 +1,641 @@
+<html><head>
+    <script src="js/jquery-1.10.2.min.js"></script>
+    <link rel="stylesheet" href="game1.css" />    
+
+</head><body>
+
+<div id="TheBoard">
+    <pre id="txtLives" class="Status">Lives:</pre>
+    <pre id="txtLevel" class="Status">Level: </pre>
+    <pre id="txtPercent" class="Status">0%</pre>
+    
+    <!--<pre id="btnNewGame" class="Button">New Game</pre>-->
+</div>
+
+<div id="TheMessage" class="unselectable">
+    <pre id="TheMessage_Title"></pre>
+    <pre id="TheMessage_Text"></pre>
+</div>
+<script>
+
+// Some consts. Yeah, I know _C is hardly a standard name. Whatever.
+var _C = {
+    EMPTY       : 0,
+    EDGE        : 1,
+    FILLED      : 2,
+    TRAIL       : 3,
+    
+    LEFT        : 37,
+    UP          : 38,
+    RIGHT       : 39,
+    DOWN        : 40,
+}
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+var colors = {};
+colors[_C.EMPTY] = 'black';
+colors[_C.EDGE] = '#666666';
+colors[_C.FILLED] = '#888888';
+colors[_C.TRAIL] = '#7777FF';
+colors.PLAYER = 'blue';
+colors.ENEMY = 'red';
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+var TheBoard;           // The game board, with pixels and stuff.
+var ThePlayer;          // The little thingy controlled by the player, which can move around.
+var TheTrail = [];
+var TheEnemies = [];    // An array of enemies. They move too!
+var TheGame;
+var TheMessage;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+function dxFromDirection (dir) {
+    if (dir == _C.LEFT)
+        return -1;
+    else if (dir == _C.RIGHT)
+        return 1;
+    else
+        return 0;
+}
+
+function dyFromDirection (dir) {
+    if (dir == _C.UP)
+        return -1;
+    else if (dir == _C.DOWN)
+        return 1;
+    else
+        return 0;
+}
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+function timedFunction (that, func, interval) {
+    function _call () {
+        arguments.callee.func.apply (arguments.callee.obj, []);
+    }
+    
+    _call.obj = that;
+    _call.func = func;
+    return setInterval (_call, interval);
+}
+
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+// -    The Game
+
+TheGame = {
+    level : 0,
+    
+    destroyEnemies : function () {
+        while (TheEnemies.length > 0) {
+            var tmp = TheEnemies.shift();
+            tmp.stopMoving ();
+            delete tmp;
+        }
+    },
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    
+    freeze : function () {
+        TheBoard.stopDrawing ();
+        ThePlayer.stopMoving ();
+        for (i=0 ; i<TheEnemies.length ; i++) {
+            TheEnemies[i].stopMoving ();
+        }
+    },
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    
+    unfreeze : function () {
+        TheBoard.startDrawing ();
+        ThePlayer.startMoving ();
+        for (i=0 ; i<TheEnemies.length ; i++) {
+            TheEnemies[i].startMoving ();
+        }
+    },
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    
+    clearLevel : function () {
+        TheBoard.clear ();
+        TheBoard.stopDrawing ();
+        ThePlayer.stopMoving ();
+        ThePlayer.x = ThePlayer.y = 0;
+        this.destroyEnemies (); 
+    },
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    
+    nextLevel : function () {
+        this.level++;
+        $("#txtLevel").html ('Level: ' + this.level);
+        
+        this.clearLevel ();
+        
+        // And get the new stuff up        
+        for (i=0 ; i < this.level+1 ; i++)
+            createEnemy ();
+        
+        TheBoard.forceDraw ();
+            
+        TheBoard.startDrawing ();
+        ThePlayer.startMoving ();
+    },
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    
+    startGame : function () {
+        ThePlayer.setLives (3);
+        this.level = 0;
+        this.nextLevel ();
+    }
+}
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+// -    The Board
+
+TheBoard = {
+    GUI : $('#TheBoard'),
+    
+    width : 80,
+    height : 24,
+    pxWidth : 14,
+    pxHeight : 20,
+    
+    pixelsToUpdate : [],
+    edges : [],
+    pixelCount : 0,
+    filledPixelCount : 0,
+
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    
+    legalPixel : function (x,y) {
+    // Returns true if this pixel is within the [0..width][0..height] range
+        return (x>=0 && x<this.width && y>=0 && y<this.height);
+    },
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+    pixelIsEdge : function (x,y) {
+    // Returns true if this pixel touches any empty pixels
+        for (i=-1 ; i<=1 ; i++) {
+            for (j=-1 ; j<=1 ; j++) {
+                if (i==0 && j==0)
+                    continue;
+                    
+                if (this.legalPixel(x+i, y+j) && this[x+i][y+j].val == _C.EMPTY)
+                    return true;
+            }
+        }
+        return false;
+    },
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+    startDrawing : function (interval) {
+        this.drawTimer = timedFunction (this, this.draw, interval || 10);
+    },
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+    stopDrawing : function () {
+        if (this.drawTimer) 
+            clearInterval (this.drawTimer);
+        delete this.drawTimer;
+    },
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+    drawPixel : function (i,j) {
+        this[i][j].css ({'background-color': colors[this[i][j].val]});
+    },
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+    forceDraw : function () {
+        this.forEachPixel (function (i,j) {
+            this.drawPixel (i,j);
+        });
+    },
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+    draw : function () {
+        while (this.pixelsToUpdate.length > 0) {
+            var p = this.pixelsToUpdate.shift();
+            this.drawPixel (p.x, p.y);
+        }
+        ThePlayer.draw ();
+        
+        for (var i in TheEnemies)
+            TheEnemies[i].draw ();
+    },
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    forEachPixel : function (func) {
+        // func should take i,j params, and assume "this" is TheBoard
+        for (var i=0 ; i < this.width ; i++) {
+            for (var j=0 ; j < this.height ; j++) {
+                func.apply (this, [i,j]);
+            }
+        }
+    },
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+    setPixel : function (x, y, val) {
+        this[x][y].val = val;
+        
+        switch (val) {
+        case _C.EDGE:
+            this.edges.push ({x:x, y:y});
+            break;
+        case _C.FILLED :
+            //this.filledPixelCount++;
+            break;
+        } 
+    },
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+    clear : function () {
+        this.forEachPixel (function (i,j) {
+            if (i==0 || i==this.width-1 || j==0 || j==this.height-1)
+                this.setPixel (i, j, _C.EDGE);
+            else
+                this.setPixel (i, j, _C.EMPTY);
+        });
+        
+        this.filledPixelCount = 0;
+        this.pixelCount = (this.width-2) * (this.height-2);
+        
+        $("#txtPercent").html ('0%');
+    },
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    
+    playerCanMoveTo : function (i,j) {
+        // Player should be able to only move on edges
+        // However, it's possible to fill an area in a way that would leave the player
+        // stranded in the middle of a filled area - in which case he can move anywhere
+        
+        if ( ! this.legalPixel (i,j))
+            return false;
+            
+            
+        // Due to some edge cases... I figured the player should be able to move to full 
+        // pixels as well.
+        
+        
+        if (this[i][j].val==_C.EMPTY || this[i][j].val==_C.EDGE || this[i][j].val==_C.FILLED)
+            return true;
+            
+        /*
+        if (this[i][j].val==_C.FILLED  &&  this[ThePlayer.x][ThePlayer.y].val==_C.FILLED)
+            return true;
+        */
+    },
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    
+    enemyCanMoveTo : function (i,j) {
+        // Enemies can only move into empty spaces        
+        return (this.legalPixel (i,j)  &&  this[i][j].val!=_C.FILLED  &&  this[i][j].val!=_C.EDGE);
+    },
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    
+    fillHelper : function (x,y, val) {
+        if ( ! this.legalPixel (x,y))
+            return false;
+        
+        if (this[x][y].val == _C.EMPTY  &&  ! this[x][y].fill) {
+            this[x][y].fill = val;
+            //this[x][y].html (val);
+            
+            this.fillHelper (x+1, y, val);
+            this.fillHelper (x-1, y, val);
+            this.fillHelper (x, y+1, val);
+            this.fillHelper (x, y-1, val);
+            
+            return true;
+        }
+        return false;
+    },
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    
+    fillUp : function (trail) {
+        this.fillings = [null];
+        var directions = [{x:-1,y:0}, {x:1,y:0}, {x:0,y:-1}, {x:0,y:1}];
+        
+        for (i=0 ; i<trail.length ; i++) {
+            var p = trail[i];
+            for (j=0 ; j<directions.length ; j++) {
+                var d = directions[j];
+                if (this.fillHelper (p.x+d.x,p.y+d.y, this.fillings.length)) {
+                    this.fillings.push (true);
+                }
+            }
+        }
+        
+        // Check which area contains enemies - can't fill those. 
+        for (var i in TheEnemies) {
+            this.fillings [TheBoard[TheEnemies[i].x][TheEnemies[i].y].fill] = false;
+        }
+        
+        // Do the actual filling
+        this.forEachPixel (function (i,j) {
+            if (this[i][j].val == _C.EMPTY  &&  this.fillings[this[i][j].fill]) {
+                this.pixelsToUpdate.push ({x:i,y:j});
+                this.setPixel (i, j, _C.FILLED);
+                this.filledPixelCount++;
+            }
+            delete this[i][j].fill;
+        });
+        
+        
+        // The trail becomes an edge
+        while (ThePlayer.trail.length > 0) {
+            var tmp = ThePlayer.trail.shift ();
+            this.pixelsToUpdate.push (tmp);
+            this.setPixel (tmp.x, tmp.y, _C.EDGE);
+            this.filledPixelCount++;
+        }
+        
+        // Go over all existing edges - some aren't edges anymore!
+        var newEdges = [];
+        for (var i in this.edges) {
+            var p = this.edges[i];
+            if (this.pixelIsEdge (p.x, p.y)) {
+                newEdges.push ({x: p.x, y: p.y});
+            }
+            else {
+                this.setPixel (p.x, p.y, _C.FILLED);
+                this.pixelsToUpdate.push ({x: p.x, y: p.y});
+            }
+        }
+        this.edges = newEdges;
+        
+        // Update the % counter
+        var percent = Math.round(this.filledPixelCount / this.pixelCount * 100);
+        $("#txtPercent").html (percent + '%');
+        
+        if (percent > 70) {
+            this.draw ();
+            msg ('Good job!', 'Click to start level '+ (TheGame.level+1), function () {TheGame.nextLevel ();});            
+        }
+    },
+}
+
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+// -    The Player
+
+ThePlayer = {
+    x : 0,
+    y : 0,
+    direction : 0,
+    
+    isMarking : false,
+    trail : [],
+    lastSafeSpot : {x:0,y:0},
+    
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    
+    draw : function () {
+        TheBoard[this.x][this.y].css ({'background-color' : colors.PLAYER});
+    },
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    
+    move : function () {
+        // Check if we're actually moving
+        if ([_C.LEFT, _C.RIGHT, _C.UP, _C.DOWN].indexOf (this.direction) == -1)
+            return;
+        
+        var dx = dxFromDirection (this.direction);
+        var dy = dyFromDirection (this.direction);
+        
+        if (TheBoard.playerCanMoveTo (this.x+dx, this.y+dy)) {
+            TheBoard.pixelsToUpdate.push ({x: this.x, y: this.y});
+            this.x += dx;
+            this.y += dy;
+            
+            if (TheBoard[this.x][this.y].val == _C.EMPTY) {
+                TheBoard.setPixel (this.x, this.y, _C.TRAIL);
+                this.trail.push ({x:this.x, y:this.y});
+                this.isMarking = true;
+            }
+            else if (TheBoard[this.x][this.y].val == _C.EDGE  &&  this.isMarking) {
+                TheBoard.fillUp (this.trail);
+                this.isMarking = false;
+            }
+            else {
+                this.lastSafeSpot = {x: this.x, y: this.y};
+            }
+        }
+    },
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    
+    startMoving : function (interval) {
+        this.moveTimer = timedFunction (this, this.move, interval || 50);
+    },
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    
+    stopMoving : function () {
+        if (this.moveTimer) 
+            clearInterval (this.moveTimer);
+        delete this.moveTimer;
+    },
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    
+    setLives : function (n) {
+        this.lives = n;
+        $("#txtLives").html ('Lives: ' + n);
+    },
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+    handleDeath : function () {
+        TheGame.unfreeze();
+        this.setLives (this.lives - 1);
+        this.x = this.lastSafeSpot.x;
+        this.y = this.lastSafeSpot.y;
+        
+        while (this.trail.length > 0) {
+            var tmp = this.trail.shift ();
+            TheBoard.pixelsToUpdate.push (tmp);
+            TheBoard.setPixel (tmp.x, tmp.y, _C.EMPTY);
+        }
+    },
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+    die : function () {
+        if (this.lives > 1) {
+            msg ('Ouch!', 'Click to keep trying', function () {
+                ThePlayer.handleDeath();
+            });
+        }
+        else {
+            msg ('GAME OVER', 'Click to start again', function () {
+                ThePlayer.handleDeath(); 
+                TheGame.startGame();
+            });
+        }
+    },
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+};
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+function createEnemy () {
+    var tmp = {
+        x : Math.floor (Math.random()*(TheBoard.width-2))+1,
+        y : Math.floor (Math.random()*(TheBoard.height-2))+1,
+        
+        dx : 0,
+        dy : 0,
+        
+        // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+        
+        draw : function () {
+            TheBoard[this.x][this.y].css ({'background-color' : colors.ENEMY});
+        },
+        // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+        
+        setRandomDirection : function () {
+            this.dx = (Math.floor (Math.random()*2) - 0.5) * 2;
+            this.dy = (Math.floor (Math.random()*2) - 0.5) * 2;
+        },
+        // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+        
+        move : function () {
+            if ( ! TheBoard.enemyCanMoveTo (this.x + this.dx, this.y + this.dy)) {
+                var xblocked = ! TheBoard.enemyCanMoveTo (this.x + this.dx, this.y);
+                var yblocked = ! TheBoard.enemyCanMoveTo (this.x, this.y + this.dy);
+                
+                if ( ! (xblocked ^ yblocked)) {
+                    this.dx = -this.dx;
+                    this.dy = -this.dy;
+                }
+                else {
+                    if (xblocked) 
+                        this.dx = -this.dx;
+                    if (yblocked) 
+                        this.dy = -this.dy;
+                }
+            }
+            
+            if (TheBoard.enemyCanMoveTo (this.x + this.dx, this.y + this.dy)) {
+                // Actual movement
+                TheBoard.pixelsToUpdate.push ({x: this.x, y: this.y});
+                this.x += this.dx;
+                this.y += this.dy;
+                
+                // Now, check if this somehow kills the player
+                if ((this.x == ThePlayer.x  && this.y == ThePlayer.y) || TheBoard[this.x][this.y].val == _C.TRAIL) {
+                    ThePlayer.die ();
+                }
+            }
+        },
+        // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+        
+        startMoving : function (interval) {
+            this.moveTimer = timedFunction (tmp, tmp.move, interval || 72);
+        },
+        // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+        
+        stopMoving : function () {
+            if (this.moveTimer) 
+                clearInterval (this.moveTimer);
+            delete this.moveTimer;
+        }
+    }
+
+    tmp.setRandomDirection ();
+    tmp.startMoving ();
+    TheEnemies.push (tmp);
+}
+
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+// -    The Message
+
+TheMessage = {
+    GUI : $("#TheMessage"),
+    
+    init : function () {
+        this.GUI.css ({
+            'width': TheBoard.pxWidth * TheBoard.width,
+            'margin-left': -TheBoard.pxWidth * TheBoard.width/2 + "px",
+            'height': 130,
+            'margin-top': -95+"px",
+        });
+    
+        $("#TheMessage_Title").click (this.onclick);
+        $("#TheMessage_Text").click (this.onclick);
+    },
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    
+    func : function () {},
+    onclick : function () {
+        TheMessage.GUI.hide ();
+        TheMessage.func ();
+        TheMessage.func = function () {};
+    },
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    
+    showMessage : function (title, text, onclick) {
+        TheGame.freeze ();
+        TheMessage.GUI.show ();
+        $("#TheMessage_Title").html (title);
+        $("#TheMessage_Text").html (text);
+        this.func = onclick;
+    },
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    
+};
+
+function msg (title, text, onclick) {
+    return TheMessage.showMessage (title, text, onclick);
+}
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+$('body').keydown(function(event) {
+    if (event.which == 32)
+        TheMessage.onclick ();
+    else
+        ThePlayer.direction = event.which;
+});
+$('body').keyup (function(event) {
+    if (ThePlayer.direction == event.which)
+        ThePlayer.direction = 0;
+});
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+$(document).ready(function() {
+    // Board init
+    TheBoard.GUI.css ({
+        'width': TheBoard.pxWidth * TheBoard.width,
+        'margin-left': -TheBoard.pxWidth * TheBoard.width/2 + "px",
+        'height': TheBoard.pxHeight * TheBoard.height,
+        'margin-top': -TheBoard.pxHeight * TheBoard.height/2+"px",
+    });
+    
+    for (var i=0 ; i < TheBoard.width ; i++) {
+        TheBoard[i] = {};
+    }    
+    for (var j=0 ; j < TheBoard.height ; j++) {
+        for (var i=0 ; i < TheBoard.width ; i++) {
+            $('#TheBoard').append ('<div class="pixel"></div>');
+            TheBoard[i][j] = $('.pixel').last();
+            TheBoard[i][j].css ({left: i*TheBoard.pxWidth, top: j*TheBoard.pxHeight});
+            TheBoard.setPixel (i, j, _C.EMPTY);
+        }
+    }
+    $('.pixel').css ({
+        'width' : TheBoard.pxWidth,
+        'height' : TheBoard.pxHeight,
+    });
+    
+    TheBoard.clear ();
+    TheBoard.forceDraw ();
+    
+    // Message init
+    TheMessage.init ();
+    msg ('A wild GAME appears!', 'Click here to START!', function () {TheGame.startGame ();});
+    
+});
+
+</script>
+
+</body></html>

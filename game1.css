@@ -1,0 +1,93 @@
+body {
+    background-color:   #888888;
+}
+
+#TheBoard {
+    left:               50%;
+    top:                50%;
+    position:           fixed;
+}
+
+#TheMessage {
+    left:               50%;
+    top:                50%;
+    position:           fixed;
+    cursor:             pointer;
+}
+
+.pixel {
+    float:              left;
+    color:              white;
+}
+
+.status {
+    position:           absolute;
+    top:                -35px;
+}
+
+#txtLives {
+    left:               10px;
+}
+
+#txtLevel {
+    left:               200px;
+}
+
+#txtPercent {
+    left:               390px;
+}
+
+/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+#TheMessage {
+    text-align:         center;
+    color:              yellow;
+}
+
+#TheMessage_Title {
+    font-size:          72px;
+    /*background-color:   red;*/
+    margin-top:         -5px;
+}
+
+#TheMessage_Text {
+    font-size:          48px;
+    /*background-color:   blue;*/
+    margin-top:         -60px;
+}
+
+/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+.Button {
+    position:           absolute;
+    left:               -120px;
+    width:              100px;
+    
+    border:             1px solid #888888;
+    border-radius:      5px;
+    text-align:         center;
+
+    background-color:   white;
+    color:              black;
+    cursor:             pointer;
+}
+
+.Button:hover {
+    background-color:   black;
+    color:              white;    
+}
+
+#btnNewGame {
+    
+}
+
+/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+.unselectable {
+    -webkit-touch-callout:  none;
+    -webkit-user-select:    none;
+    -khtml-user-select:     none;
+    -moz-user-select:       moz-none;
+    -ms-user-select:        none;
+    user-select:            none;
+}
