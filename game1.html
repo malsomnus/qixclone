@@ -8,6 +8,7 @@
     <pre id="txtLives" class="Status">Lives:</pre>
     <pre id="txtLevel" class="Status">Level: </pre>
     <pre id="txtPercent" class="Status">0%</pre>
+    <pre id="txtScore" class="Status">Score:</pre>
     
     <!--<pre id="btnNewGame" class="Button">New Game</pre>-->
 </div>
@@ -15,6 +16,7 @@
 <div id="TheMessage" class="unselectable">
     <pre id="TheMessage_Title"></pre>
     <pre id="TheMessage_Text"></pre>
+    <pre id="TheMessage_List"></pre>
 </div>
 <script>
 
@@ -87,6 +89,7 @@ function timedFunction (that, func, interval) {
 
 TheGame = {
     level : 0,
+    score : 0,
     
     destroyEnemies : function () {
         while (TheEnemies.length > 0) {
@@ -142,10 +145,25 @@ TheGame = {
     // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
     
     startGame : function () {
-        ThePlayer.setLives (3);
         this.level = 0;
+        this.score = 0;
+        ThePlayer.setLives (3);
         this.nextLevel ();
-    }
+        this.gainPoints (0);
+    },
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    
+    gainPoints : function (n) {
+        // Did the player earn a life?
+        var pointsPerLife = 25000;
+        if (Math.floor ((this.score) / pointsPerLife) < Math.floor ((this.score + n) / pointsPerLife))
+            ThePlayer.setLives (ThePlayer.lives +1);
+        
+        this.score += n;
+        $("#txtScore").html ('Score: ' + this.score);
+    },
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    
 }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -330,6 +348,7 @@ TheBoard = {
         }
         
         // Do the actual filling
+        var oldFilledPixelCount = this.filledPixelCount;    // Need this for the score calculation
         this.forEachPixel (function (i,j) {
             if (this[i][j].val == _C.EMPTY  &&  this.fillings[this[i][j].fill]) {
                 this.pixelsToUpdate.push ({x:i,y:j});
@@ -366,10 +385,26 @@ TheBoard = {
         var percent = Math.round(this.filledPixelCount / this.pixelCount * 100);
         $("#txtPercent").html (percent + '%');
         
+        // Update score
+        var oldPercent = oldFilledPixelCount / this.pixelCount * 100;
+        var fillFactor = Math.pow (1.0215, percent - oldPercent);
+        var levelFactor = TheGame.level + 31
+        var points = Math.round ((percent - oldPercent) * fillFactor * levelFactor);
+        if (points > 0) {
+            // It's 07:51 and I'll be damned if I'm going to waste my time trying 
+            // to figure out how the fuck this number manages to be negative...
+            TheGame.gainPoints (points);
+        }
+
+        // Is the level finished?
         if (percent > 70) {
             this.draw ();
-            msg ('Good job!', 'Click to start level '+ (TheGame.level+1), function () {TheGame.nextLevel ();});            
-        }
+            var bonus1 = 1000 * TheGame.level;
+            var bonus2 = Math.round (Math.pow (1.06191 * (1 + 0.002*(TheGame.level-1)), (percent-70)) * 1000) - 1061;
+            var list = [['End of level bonus', bonus1],  ['Fill bonus ('+percent+'%)', bonus2]];
+            
+            msg ('Good job!', 'Click to start level '+ (TheGame.level+1), list, function () {TheGame.nextLevel ();});            
+        }        
     },
 }
 
@@ -457,12 +492,12 @@ ThePlayer = {
 
     die : function () {
         if (this.lives > 1) {
-            msg ('Ouch!', 'Click to keep trying', function () {
+            msg ('Ouch!', 'Click to keep trying', null, function () {
                 ThePlayer.handleDeath();
             });
         }
         else {
-            msg ('GAME OVER', 'Click to start again', function () {
+            msg ('GAME OVER', 'Click to start again', null, function () {
                 ThePlayer.handleDeath(); 
                 TheGame.startGame();
             });
@@ -572,19 +607,39 @@ TheMessage = {
     },
     // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
     
-    showMessage : function (title, text, onclick) {
+    formatList : function (list) {
+        var ret = '';
+        for (i=0 ; i<list.length ; i++) {
+            var tmp = '';
+            for (j=0 ; j< 30 - list[i][0].toString().length - list[i][1].toString().length ; j++)
+                tmp += '.';
+            if (i>0)
+                ret += '\n';
+            ret += list[i][0] + tmp + list[i][1];
+        }    
+        return ret;
+    },
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    
+    showMessage : function (title, text, list, onclick) {
         TheGame.freeze ();
         TheMessage.GUI.show ();
         $("#TheMessage_Title").html (title);
         $("#TheMessage_Text").html (text);
+        if (list != null) {
+            $("#TheMessage_List").html (this.formatList(list));
+        } 
+        else {
+            $("#TheMessage_List").html ('');
+        }
         this.func = onclick;
     },
     // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
     
 };
 
-function msg (title, text, onclick) {
-    return TheMessage.showMessage (title, text, onclick);
+function msg (title, text, list, onclick) {
+    return TheMessage.showMessage (title, text, list, onclick);
 }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -632,7 +687,7 @@ $(document).ready(function() {
     
     // Message init
     TheMessage.init ();
-    msg ('A wild GAME appears!', 'Click here to START!', function () {TheGame.startGame ();});
+    msg ('A wild GAME appears!', 'Click here to START!', null, function () {TheGame.startGame ();});
     
 });
 

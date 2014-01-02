@@ -37,6 +37,10 @@ body {
     left:               390px;
 }
 
+#txtScore {
+    left:               580px;
+}
+
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
 #TheMessage {
@@ -46,14 +50,17 @@ body {
 
 #TheMessage_Title {
     font-size:          72px;
-    /*background-color:   red;*/
     margin-top:         -5px;
 }
 
 #TheMessage_Text {
     font-size:          48px;
-    /*background-color:   blue;*/
     margin-top:         -60px;
+}
+
+#TheMessage_List {
+    font-size:          24px;
+    margin-top:         -40px;
 }
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
