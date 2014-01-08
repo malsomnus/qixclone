@@ -50,6 +50,7 @@ var TheTrail = [];
 var TheEnemies = [];    // An array of enemies. They move too!
 var TheGame;
 var TheMessage;
+var TheLoader;          // In charge of loading the game nicely
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -174,9 +175,9 @@ TheBoard = {
     GUI : $('#TheBoard'),
     
     width : 80,
-    height : 24,
-    pxWidth : 14,
-    pxHeight : 20,
+    height : 40,
+    pxWidth : 16,
+    pxHeight : 16,
     
     pixelsToUpdate : [],
     edges : [],
@@ -599,11 +600,13 @@ TheMessage = {
     },
     // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
     
-    func : function () {},
+    func : null,
     onclick : function () {
-        TheMessage.GUI.hide ();
-        TheMessage.func ();
-        TheMessage.func = function () {};
+        if (TheMessage.func != null) {
+            TheMessage.GUI.hide ();
+            TheMessage.func ();
+            TheMessage.func = function () {};
+        }
     },
     // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
     
@@ -644,6 +647,63 @@ function msg (title, text, list, onclick) {
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
+TheLoader = {
+    row : 0,
+    
+    loadGame : function () {
+        // Board and Message init
+        TheBoard.GUI.css ({
+            'width': TheBoard.pxWidth * TheBoard.width,
+            'margin-left': -TheBoard.pxWidth * TheBoard.width/2 + "px",
+            'height': TheBoard.pxHeight * TheBoard.height,
+            'margin-top': -TheBoard.pxHeight * TheBoard.height/2+"px",
+        });
+        
+        for (var i=0 ; i < TheBoard.width ; i++) {
+            TheBoard[i] = {};
+        }
+        
+        TheMessage.init ();
+        
+        // Now start loading all the rows
+        this.loadTimer = timedFunction (this, this.loadRow, 5);
+    },
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    
+    loadRow : function () {
+        for (var i=0 ; i < TheBoard.width ; i++) {
+            $('#TheBoard').append ('<div class="pixel"></div>');
+            TheBoard[i][this.row] = $('.pixel').last();
+            TheBoard[i][this.row].css ({left: i*TheBoard.pxWidth, top: this.row*TheBoard.pxHeight});
+            TheBoard.setPixel (i, this.row, _C.EMPTY);
+            
+            msg ('Loading: ' + Math.round (this.row/ TheBoard.height * 100) + '%', '');
+        }
+        this.row++;
+        if (this.row == TheBoard.height) {
+            this.finishLoading ();
+        }
+    },
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    
+    finishLoading : function () {
+        clearInterval (this.loadTimer);
+        $('.pixel').css ({
+            'width' : TheBoard.pxWidth,
+            'height' : TheBoard.pxHeight,
+            'display' : 'inherit',
+        });
+        
+        TheBoard.clear ();
+        TheBoard.forceDraw ();
+        
+        
+        msg ('A wild GAME appears!', 'Click here to START!', null, function () {TheGame.startGame ();});
+    },
+}
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
 $('body').keydown(function(event) {
     if (event.which == 32)
         TheMessage.onclick ();
@@ -658,36 +718,21 @@ $('body').keyup (function(event) {
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 $(document).ready(function() {
-    // Board init
-    TheBoard.GUI.css ({
-        'width': TheBoard.pxWidth * TheBoard.width,
-        'margin-left': -TheBoard.pxWidth * TheBoard.width/2 + "px",
-        'height': TheBoard.pxHeight * TheBoard.height,
-        'margin-top': -TheBoard.pxHeight * TheBoard.height/2+"px",
-    });
     
-    for (var i=0 ; i < TheBoard.width ; i++) {
-        TheBoard[i] = {};
-    }    
-    for (var j=0 ; j < TheBoard.height ; j++) {
+    TheLoader.loadGame ();    
+    /*for (var j=0 ; j < TheBoard.height ; j++) {
         for (var i=0 ; i < TheBoard.width ; i++) {
             $('#TheBoard').append ('<div class="pixel"></div>');
             TheBoard[i][j] = $('.pixel').last();
             TheBoard[i][j].css ({left: i*TheBoard.pxWidth, top: j*TheBoard.pxHeight});
             TheBoard.setPixel (i, j, _C.EMPTY);
+            
+            
+            msg (i +' '+j, '');
         }
     }
-    $('.pixel').css ({
-        'width' : TheBoard.pxWidth,
-        'height' : TheBoard.pxHeight,
-    });
+    */
     
-    TheBoard.clear ();
-    TheBoard.forceDraw ();
-    
-    // Message init
-    TheMessage.init ();
-    msg ('A wild GAME appears!', 'Click here to START!', null, function () {TheGame.startGame ();});
     
 });
 
